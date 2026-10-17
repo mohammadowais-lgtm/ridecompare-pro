@@ -1,8 +1,16 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { Session } from "@supabase/supabase-js";
+import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
+import { rememberNext } from "@/lib/next-path";
+export { RESUMABLE_PATHS, rememberNext, takeNext } from "@/lib/next-path";
+export type { ResumablePath } from "@/lib/next-path";
 
 export interface User {
+  id: string;
   name: string;
   email: string;
+  avatarUrl: string | null;
 }
 
 export interface Coords {
@@ -10,52 +18,142 @@ export interface Coords {
   lng: number;
 }
 
-/** Auth service contract. Swap MockAuthService for a real backend later. */
-export interface AuthService {
-  signIn(email: string, password: string): Promise<User>;
-  signUp(name: string, email: string, password: string): Promise<User>;
-  signOut(): Promise<void>;
+function text(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+async function readUser(session: Session | null): Promise<User | null> {
+  const authUser = session?.user;
+  if (!authUser) return null;
 
-/** Demo only: never stores or transmits passwords. */
-export const MockAuthService: AuthService = {
-  async signIn(email) {
-    await wait(700);
-    const local = email.split("@")[0] ?? "Rider";
-    return { email, name: local.charAt(0).toUpperCase() + local.slice(1) };
-  },
-  async signUp(name, email) {
-    await wait(800);
-    return { name, email };
-  },
-  async signOut() {},
-};
+  const meta = (authUser.user_metadata ?? {}) as Record<string, unknown>;
+  const { data } = await supabase.from("profiles").select("full_name, avatar_url").eq("id", authUser.id).maybeSingle();
+
+  const email = authUser.email ?? "";
+  return {
+    id: authUser.id,
+    email,
+    name:
+      text(data?.full_name) ??
+      text(meta.full_name) ??
+      text(meta.name) ??
+      text(meta.user_name) ??
+      text(email.split("@")[0]) ??
+      "Rider",
+    avatarUrl: text(data?.avatar_url) ?? text(meta.avatar_url) ?? text(meta.picture),
+  };
+}
+
+/** Turns backend auth messages into wording a rider can act on. */
+function authMessage(message: string): string {
+  const m = message.toLowerCase();
+  if (m.includes("invalid login credentials")) return "That email and password don't match.";
+  if (m.includes("email not confirmed")) return "Confirm your email first — open the link we sent you.";
+  if (m.includes("rate limit") || m.includes("too many requests")) return "Too many attempts. Please wait a minute and try again.";
+  if (m.includes("user already registered")) return "An account with this email already exists. Sign in instead.";
+  return message || "Something went wrong. Please try again.";
+}
 
 interface SessionValue {
   user: User | null;
+  ready: boolean;
   currentLocation: Coords | null;
-  auth: AuthService;
-  setUser: (u: User | null) => void;
   setCurrentLocation: (c: Coords | null) => void;
+  signIn: (email: string, password: string) => Promise<void>;
+  signUp: (name: string, email: string, password: string) => Promise<{ needsConfirmation: boolean }>;
+  signInWithGoogle: () => Promise<void>;
+  sendPasswordReset: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
 
-export function SessionProvider({ children, auth = MockAuthService }: { children: ReactNode; auth?: AuthService }) {
+export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
   const [currentLocation, setCurrentLocation] = useState<Coords | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    void supabase.auth.getSession().then(async ({ data }) => {
+      const next = await readUser(data.session);
+      if (!active) return;
+      setUser(next);
+      setReady(true);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+      // INITIAL_SESSION and TOKEN_REFRESHED only restate state we already hold.
+      if (event === "INITIAL_SESSION" || event === "TOKEN_REFRESHED") return;
+      if (event === "SIGNED_OUT") {
+        setUser(null);
+        setCurrentLocation(null);
+        setReady(true);
+        return;
+      }
+      void readUser(session).then((next) => {
+        if (active) setUser(next);
+      });
+    });
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw new Error(authMessage(error.message));
+  }, []);
+
+  const signUp = useCallback(async (name: string, email: string, password: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: name }, emailRedirectTo: window.location.origin },
+    });
+    if (error) throw new Error(authMessage(error.message));
+    return { needsConfirmation: data.session === null };
+  }, []);
+
+  const signInWithGoogle = useCallback(async () => {
+    rememberNext("/location");
+    const result = await lovable.auth.signInWithOAuth("google", { redirect_uri: window.location.origin });
+    if (result.error) throw new Error(authMessage(result.error.message ?? "Google sign-in didn't work."));
+    // When the browser is sent to Google, the session arrives on the next page
+    // load and the sign-in screen resumes the stored route.
+  }, []);
+
+  const sendPasswordReset = useCallback(async (email: string) => {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+    if (error) throw new Error(authMessage(error.message));
+  }, []);
+
   const signOut = useCallback(async () => {
-    await auth.signOut();
+    await supabase.auth.signOut();
     setUser(null);
     setCurrentLocation(null);
-  }, [auth]);
+  }, []);
+
   const value = useMemo(
-    () => ({ user, currentLocation, auth, setUser, setCurrentLocation, signOut }),
-    [user, currentLocation, auth, signOut],
+    () => ({
+      user,
+      ready,
+      currentLocation,
+      setCurrentLocation,
+      signIn,
+      signUp,
+      signInWithGoogle,
+      sendPasswordReset,
+      signOut,
+    }),
+    [user, ready, currentLocation, signIn, signUp, signInWithGoogle, sendPasswordReset, signOut],
   );
+
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

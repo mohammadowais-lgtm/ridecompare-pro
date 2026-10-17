@@ -16,11 +16,11 @@ export const Route = createFileRoute("/location")({
 });
 
 function LocationPage() {
-  const { user, setCurrentLocation } = useSession();
+  const { user, ready, setCurrentLocation } = useSession();
   const navigate = useNavigate();
   useEffect(() => {
-    if (!user) navigate({ to: "/" });
-  }, [user, navigate]);
+    if (ready && !user) navigate({ to: "/" });
+  }, [ready, user, navigate]);
   if (!user) return null;
   return (
     <div className="pt-4 sm:pt-8">
