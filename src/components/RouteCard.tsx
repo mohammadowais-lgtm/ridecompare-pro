@@ -1,7 +1,9 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUpDown, LocateFixed } from "lucide-react";
 import { Card } from "./ui-kit";
+import { getPlaceDetails, suggestPlaces } from "@/lib/places.functions";
 import { searchPlaces, type Place } from "@/lib/places";
 import { cn } from "@/lib/utils";
 
@@ -64,6 +66,13 @@ export function RouteCard({ pickup, drop, onPickup, onDrop, onSwap, onUseCurrent
   );
 }
 
+interface Option {
+  id: string;
+  name: string;
+  secondary: string;
+  source: "google" | "local";
+}
+
 function PlaceRow({
   label,
   dot,
@@ -79,20 +88,54 @@ function PlaceRow({
 }) {
   const id = useId();
   const listId = `${id}-list`;
+  const suggest = useServerFn(suggestPlaces);
+  const fetchDetails = useServerFn(getPlaceDetails);
   const [text, setText] = useState(value?.name ?? "");
   const [query, setQuery] = useState("");
+  const [googleResults, setGoogleResults] = useState<Option[] | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const wrap = useRef<HTMLDivElement>(null);
+  const sessionToken = useRef<string | null>(null);
+  const requestId = useRef(0);
 
   useEffect(() => setText(value?.name ?? ""), [value]);
 
   useEffect(() => {
-    const t = setTimeout(() => setQuery(text), 180);
+    const t = setTimeout(() => setQuery(text), 300);
     return () => clearTimeout(t);
   }, [text]);
 
-  const results: Place[] = searchPlaces(query === value?.name ? "" : query);
+  const localOptions: Option[] = searchPlaces(query.trim() === value?.name ? "" : query.trim()).map((p) => ({
+    id: p.id,
+    name: p.name,
+    secondary: p.area,
+    source: "local" as const,
+  }));
+  const results: Option[] =
+    googleResults && googleResults.length > 0 ? googleResults : localOptions;
+  const searching = googleResults === null && query.trim().length >= 2 && query.trim() !== value?.name;
+
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2 || q === value?.name) {
+      setGoogleResults(null);
+      return;
+    }
+    const myRequest = ++requestId.current;
+    if (!sessionToken.current) sessionToken.current = crypto.randomUUID();
+    suggest({ data: { input: q, sessionToken: sessionToken.current } })
+      .then((r) => {
+        if (requestId.current !== myRequest) return;
+        setGoogleResults(
+          r.suggestions.map((s) => ({ ...s, source: "google" as const })),
+        );
+      })
+      .catch(() => {
+        if (requestId.current !== myRequest) return;
+        setGoogleResults([]);
+      });
+  }, [query, value?.name, suggest]);
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -105,9 +148,28 @@ function PlaceRow({
     return () => document.removeEventListener("mousedown", onDown);
   }, [value]);
 
-  const choose = (p: Place) => {
-    onChange({ name: p.name, lat: p.lat, lng: p.lng });
+  const choose = (opt: Option) => {
+    if (opt.source === "local") {
+      const p = searchPlaces("").find((x) => x.id === opt.id) as Place | undefined;
+      if (p) {
+        onChange({ name: p.name, lat: p.lat, lng: p.lng });
+        setOpen(false);
+      }
+      return;
+    }
+    // Google suggestion: resolve coordinates, then retire the session token.
+    const token = sessionToken.current;
+    sessionToken.current = null;
     setOpen(false);
+    fetchDetails({ data: { placeId: opt.id, sessionToken: token ?? "" } })
+      .then((r) => {
+        if (r.place) {
+          onChange({ name: r.place.name, lat: r.place.lat, lng: r.place.lng });
+        } else {
+          setText(value?.name ?? "");
+        }
+      })
+      .catch(() => setText(value?.name ?? ""));
   };
 
   return (
@@ -164,7 +226,7 @@ function PlaceRow({
         />
       </div>
       <AnimatePresence>
-        {open && results.length > 0 && (
+        {open && (results.length > 0 || searching) && (
           <motion.ul
             id={listId}
             role="listbox"
@@ -174,18 +236,23 @@ function PlaceRow({
             transition={{ duration: 0.12 }}
             className="absolute left-3 right-3 top-full z-20 -mt-1 max-h-72 overflow-auto rounded-lg border border-border bg-card p-1 shadow-[0_12px_32px_-16px_color-mix(in_oklab,var(--foreground)_30%,transparent)]"
           >
-            {results.map((p, i) => (
+            {searching && results.length === 0 && (
+              <li aria-hidden className="px-3 py-2 text-xs text-faint">
+                Searching places…
+              </li>
+            )}
+            {results.map((opt, i) => (
               <li
-                key={p.id}
+                key={`${opt.source}-${opt.id}`}
                 role="option"
                 aria-selected={i === active}
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setActive(i)}
-                onClick={() => choose(p)}
+                onClick={() => choose(opt)}
                 className={cn("cursor-pointer rounded-md px-3 py-2", i === active && "bg-muted")}
               >
-                <p className="text-sm font-medium">{p.name}</p>
-                <p className="text-xs text-muted-foreground">{p.area}</p>
+                <p className="text-sm font-medium">{opt.name}</p>
+                <p className="text-xs text-muted-foreground">{opt.secondary}</p>
               </li>
             ))}
           </motion.ul>
