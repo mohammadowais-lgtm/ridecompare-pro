@@ -2,6 +2,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
+import { rememberNext } from "@/lib/next-path";
+export { RESUMABLE_PATHS, rememberNext, takeNext } from "@/lib/next-path";
+export type { ResumablePath } from "@/lib/next-path";
 
 export interface User {
   id: string;
@@ -15,35 +18,8 @@ export interface Coords {
   lng: number;
 }
 
-/** Only these app pages may be resumed after a sign-in round-trip. */
-export const RESUMABLE_PATHS = ["/location", "/compare"] as const;
-export type ResumablePath = (typeof RESUMABLE_PATHS)[number];
-
-const NEXT_KEY = "ridecompare-next";
-
 function text(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-/** Remember where the user wanted to go so a provider round-trip can resume it. */
-export function rememberNext(path: ResumablePath) {
-  try {
-    sessionStorage.setItem(NEXT_KEY, path);
-  } catch {
-    // Storage can be unavailable; the app then opens its default page.
-  }
-}
-
-/** Read and clear the stored destination. Anything outside the app's own pages is ignored. */
-export function takeNext(): ResumablePath | null {
-  let stored: string | null = null;
-  try {
-    stored = sessionStorage.getItem(NEXT_KEY);
-    if (stored !== null) sessionStorage.removeItem(NEXT_KEY);
-  } catch {
-    return null;
-  }
-  return (RESUMABLE_PATHS as readonly string[]).includes(stored ?? "") ? (stored as ResumablePath) : null;
 }
 
 async function readUser(session: Session | null): Promise<User | null> {

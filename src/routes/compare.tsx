@@ -27,13 +27,18 @@ export const Route = createFileRoute("/compare")({
 const CURRENT = "Current location";
 
 function ComparePage() {
-  const { user, currentLocation, setCurrentLocation } = useSession();
+  const { user, ready, currentLocation, setCurrentLocation } = useSession();
   const navigate = useNavigate();
 
-  const [pickup, setPickup] = useState<RoutePlace | null>(() =>
-    currentLocation ? { name: CURRENT, ...currentLocation } : { name: PLACES[0].name, lat: PLACES[0].lat, lng: PLACES[0].lng },
-  );
-  const [drop, setDrop] = useState<RoutePlace | null>({ name: PLACES[2].name, lat: PLACES[2].lat, lng: PLACES[2].lng });
+  const [pickup, setPickup] = useState<RoutePlace | null>(() => {
+    const first = PLACES[0];
+    if (currentLocation) return { name: CURRENT, ...currentLocation };
+    return first ? { name: first.name, lat: first.lat, lng: first.lng } : null;
+  });
+  const [drop, setDrop] = useState<RoutePlace | null>(() => {
+    const third = PLACES[2];
+    return third ? { name: third.name, lat: third.lat, lng: third.lng } : null;
+  });
   const [filter, setFilter] = useState<VehicleFilter>("all");
   const [sort, setSort] = useState<SortKey>("price");
   const [selected, setSelected] = useState<string | null>(null);
@@ -44,8 +49,8 @@ function ComparePage() {
   const toastTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    if (!user) navigate({ to: "/" });
-  }, [user, navigate]);
+    if (ready && !user) navigate({ to: "/" });
+  }, [ready, user, navigate]);
 
   const routeKey = pickup && drop ? `${pickup.lat},${pickup.lng}|${drop.lat},${drop.lng}` : "";
   const sameSpot = !!pickup && !!drop && pickup.lat === drop.lat && pickup.lng === drop.lng;
