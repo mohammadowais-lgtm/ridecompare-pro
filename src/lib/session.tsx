@@ -35,12 +35,12 @@ async function readUser(session: Session | null): Promise<User | null> {
     email,
     name:
       text(data?.full_name) ??
-      text(meta.full_name) ??
-      text(meta.name) ??
-      text(meta.user_name) ??
+      text(meta["full_name"]) ??
+      text(meta["name"]) ??
+      text(meta["user_name"]) ??
       text(email.split("@")[0]) ??
       "Rider",
-    avatarUrl: text(data?.avatar_url) ?? text(meta.avatar_url) ?? text(meta.picture),
+    avatarUrl: text(data?.avatar_url) ?? text(meta["avatar_url"]) ?? text(meta["picture"]),
   };
 }
 
