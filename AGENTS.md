@@ -11,5 +11,6 @@
 
 ## Architecture rules
 
-- Pickup/drop-off place search calls Google Places (New) autocomplete + place details through the connector gateway from `src/lib/places.functions.ts` (server functions). Credentials are server-only (`LOVABLE_API_KEY`, `GOOGLE_MAPS_API_KEY`); never call Places from the browser. Suggestions are debounced 300 ms client-side with one session token per interaction, retired after the details call. App auth is currently a client-side demo — add session verification to these handlers before shipping real user auth.
+- Pickup/drop-off place search calls Google Places (New) autocomplete + place details through the connector gateway from `src/lib/places.functions.ts` (server functions). Credentials are server-only (`LOVABLE_API_KEY`, `GOOGLE_MAPS_API_KEY`); never call Places from the browser. Suggestions are debounced 300 ms client-side with one session token per interaction, retired after the details call. These handlers stay public — add caller checks and per-user limits before any user-scoped or billed behaviour moves in.
+- Sign-in is Lovable Cloud (email/password plus Google through the broker) with one `public.profiles` row per user; `SessionProvider` in `src/lib/session.tsx` is the single source of session truth, so new pages read `user`/`ready` from it rather than adding their own auth gate.
 - `src/lib/places.ts` keeps a small curated Bengaluru list used as offline fallback and for the default pickup/drop-off; it must not grow into the primary search source.

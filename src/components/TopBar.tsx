@@ -48,9 +48,13 @@ export function TopBar() {
               aria-expanded={open}
               aria-label="Account menu"
               onClick={() => setOpen((o) => !o)}
-              className="focus-ring grid h-8 w-8 place-items-center rounded-full border border-border bg-primary-tint text-xs font-semibold text-primary"
+              className="focus-ring grid h-8 w-8 place-items-center overflow-hidden rounded-full border border-border bg-primary-tint text-xs font-semibold text-primary"
             >
-              {initials}
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="" referrerPolicy="no-referrer" className="h-full w-full object-cover" />
+              ) : (
+                initials
+              )}
             </button>
             <AnimatePresence>
               {open && (
