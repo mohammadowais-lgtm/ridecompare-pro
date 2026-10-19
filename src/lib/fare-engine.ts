@@ -1,4 +1,4 @@
-export type Provider = "uber" | "ola" | "rapido";
+export type Provider = "uber" | "ola" | "rapido" | "nammayatri";
 export type VehicleType = "bike" | "auto" | "car";
 
 export interface LatLng {
@@ -18,6 +18,8 @@ interface RateCard {
   minFare: number;
   etaBase: number;
   category: string;
+  /** Regulated meter fare: no demand surge, Bengaluru night meter applies. */
+  metered?: boolean;
 }
 
 const RATE_CARDS: RateCard[] = [
@@ -31,10 +33,14 @@ const RATE_CARDS: RateCard[] = [
   { id: "ola-prime", provider: "ola", name: "Ola Prime Sedan", type: "car", seats: 4, base: 60, perKm: 19, perMin: 2.2, minFare: 150, etaBase: 8, category: "prime" },
   { id: "rapido-bike", provider: "rapido", name: "Rapido Bike", type: "bike", seats: 1, base: 15, perKm: 5.5, perMin: 0.8, minFare: 30, etaBase: 2, category: "bike" },
   { id: "rapido-auto", provider: "rapido", name: "Rapido Auto", type: "auto", seats: 3, base: 28, perKm: 12.5, perMin: 1, minFare: 45, etaBase: 3, category: "auto" },
+  { id: "ny-auto", provider: "nammayatri", name: "Namma Yatri Auto", type: "auto", seats: 3, base: 30, perKm: 15, perMin: 0, minFare: 30, etaBase: 3, category: "AUTO_RICKSHAW", metered: true },
+  { id: "ny-auto-plus", provider: "nammayatri", name: "Namma Yatri Auto Priority", type: "auto", seats: 3, base: 40, perKm: 15, perMin: 0, minFare: 40, etaBase: 2, category: "AUTO_PRIORITY", metered: true },
+  { id: "ny-cab", provider: "nammayatri", name: "Namma Yatri Cab Non-AC", type: "car", seats: 4, base: 40, perKm: 13, perMin: 1.2, minFare: 95, etaBase: 6, category: "TAXI" },
+  { id: "ny-sedan", provider: "nammayatri", name: "Namma Yatri AC Sedan", type: "car", seats: 4, base: 55, perKm: 17, perMin: 1.6, minFare: 140, etaBase: 7, category: "SEDAN" },
   { id: "rapido-cab", provider: "rapido", name: "Rapido Cab Economy", type: "car", seats: 4, base: 40, perKm: 14, perMin: 1.6, minFare: 100, etaBase: 6, category: "cab" },
 ];
 
-export const PROVIDER_NAMES: Record<Provider, string> = { uber: "Uber", ola: "Ola", rapido: "Rapido" };
+export const PROVIDER_NAMES: Record<Provider, string> = { uber: "Uber", ola: "Ola", rapido: "Rapido", nammayatri: "Namma Yatri" };
 
 export interface FareOption {
   id: string;
@@ -49,6 +55,14 @@ export interface FareOption {
   high: number;
   price: number;
   multiplier: number;
+  /** "meter" = regulated day rate, "night" = 1.5x night meter, "demand" = dynamic surge. */
+  pricing: "meter" | "night" | "demand";
+  breakdown: { base: number; distance: number; time: number; minFare: number; perKm: number };
+}
+
+/** Bengaluru night meter window: 10 PM to 5 AM. */
+export function isNightMeter(hour: number): boolean {
+  return hour >= 22 || hour < 5;
 }
 
 export interface TripEstimate {
@@ -89,8 +103,14 @@ function demandMultiplier(id: string, seed: string, hour: number): number {
 export function computeFares(trip: TripEstimate, seed: string, now = new Date()): FareOption[] {
   const hour = now.getHours();
   return RATE_CARDS.map((c) => {
-    const raw = Math.max(c.minFare, c.base + c.perKm * trip.km + c.perMin * trip.minutes);
-    const multiplier = demandMultiplier(c.id, seed, hour);
+    // Meter autos: base covers the first 2 km.
+    const billableKm = c.metered ? Math.max(0, trip.km - 2) : trip.km;
+    const distance = c.perKm * billableKm;
+    const time = c.perMin * trip.minutes;
+    const raw = Math.max(c.minFare, c.base + distance + time);
+    const night = c.metered && isNightMeter(hour);
+    const multiplier = c.metered ? (night ? 1.5 : 1) : demandMultiplier(c.id, seed, hour);
+    const pricing: FareOption["pricing"] = c.metered ? (night ? "night" : "meter") : "demand";
     const mid = raw * multiplier;
     const low = Math.round(mid * 0.94);
     const high = Math.round(mid * 1.08);
@@ -108,6 +128,8 @@ export function computeFares(trip: TripEstimate, seed: string, now = new Date())
       high,
       price: Math.round((low + high) / 2),
       multiplier,
+      pricing,
+      breakdown: { base: c.base, distance: Math.round(distance), time: Math.round(time), minFare: c.minFare, perKm: c.perKm },
     };
   });
 }

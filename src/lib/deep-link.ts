@@ -33,5 +33,7 @@ export function buildDeepLink(option: FareOption, pickup: RoutePoint, drop: Rout
     }
     case "rapido":
       return "https://www.rapido.bike/";
+    case "nammayatri":
+      return "https://customer.nammayatri.in/";
   }
 }
