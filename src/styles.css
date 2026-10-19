@@ -34,6 +34,7 @@
   --color-uber-foreground: var(--uber-foreground);
   --color-ola: var(--ola);
   --color-rapido: var(--rapido);
+  --color-nammayatri: var(--nammayatri);
   --color-brand-ink: var(--foreground);
 }
 
@@ -59,6 +60,7 @@
   --uber-foreground: oklch(1 0 0);
   --ola: oklch(0.87 0.18 115);               /* #CFE23A */
   --rapido: oklch(0.86 0.16 90);             /* #F7CE3E */
+  --nammayatri: oklch(0.88 0.17 95);         /* #FCC32C */
   --shimmer: linear-gradient(90deg, var(--border) 0%, oklch(0.96 0.008 253) 50%, var(--border) 100%);
 }
 

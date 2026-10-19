@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 import { MotionConfig } from "framer-motion";
+import { AnimatedBackdrop } from "@/components/AnimatedBackdrop";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -98,11 +99,14 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <MotionConfig reducedMotion="user">
         <SessionProvider>
-          <div className="min-h-screen">
-            <TopBar />
-            <main className="mx-auto w-full max-w-[680px] px-4 py-8 sm:py-12">
-              <Outlet />
-            </main>
+          <div className="relative min-h-screen">
+            <AnimatedBackdrop />
+            <div className="relative z-10">
+              <TopBar />
+              <main className="mx-auto w-full max-w-[680px] px-4 py-8 sm:py-12">
+                <Outlet />
+              </main>
+            </div>
           </div>
         </SessionProvider>
       </MotionConfig>
