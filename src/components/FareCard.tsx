@@ -2,14 +2,9 @@ import { useEffect, useState } from "react";
 import { animate, AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ExternalLink } from "lucide-react";
 import { Tag } from "./ui-kit";
-import { PROVIDER_NAMES, type FareOption, type Provider } from "@/lib/fare-engine";
+import { PROVIDER_NAMES, type FareOption } from "@/lib/fare-engine";
 import { cn } from "@/lib/utils";
-
-const MONO: Record<Provider, { letter: string; cls: string }> = {
-  uber: { letter: "U", cls: "bg-uber text-uber-foreground" },
-  ola: { letter: "O", cls: "bg-ola text-brand-ink" },
-  rapido: { letter: "R", cls: "bg-rapido text-brand-ink" },
-};
+import { ProviderLogo } from "./ProviderLogo";
 
 function useCountUp(target: number) {
   const reduce = useReducedMotion();
@@ -76,19 +71,19 @@ export function FareCard({
         }}
         className="flex cursor-pointer items-center gap-3 p-4 outline-none focus-visible:bg-primary-tint/50"
       >
-        <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-md text-base font-bold", mono.cls)}>
-          {mono.letter}
-        </span>
+        <ProviderLogo provider={option.provider} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold">{option.name}</p>
           <p className="tabular mt-0.5 truncate text-xs text-muted-foreground">
             {option.etaMin} min away · {option.tripMin} min trip · {option.seats} {option.seats === 1 ? "seat" : "seats"}
           </p>
-          {(lowest || nearest || option.multiplier >= 1.2) && (
+          {(lowest || nearest || option.pricing !== "demand" || option.multiplier >= 1.2) && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {lowest && <Tag tone="success">Lowest fare</Tag>}
               {nearest && <Tag tone="info">Nearest</Tag>}
-              {option.multiplier >= 1.2 && <Tag tone="warning">{option.multiplier.toFixed(1)}x demand</Tag>}
+              {option.pricing === "meter" && <Tag tone="success">Govt meter · Zero surge</Tag>}
+              {option.pricing === "night" && <Tag tone="warning">Night meter 1.5x</Tag>}
+              {option.pricing === "demand" && option.multiplier >= 1.2 && <Tag tone="warning">{option.multiplier.toFixed(1)}x demand</Tag>}
             </div>
           )}
         </div>
@@ -108,6 +103,24 @@ export function FareCard({
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="border-t border-border px-4 pb-4 pt-3">
+              <dl className="tabular mb-3 grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                <dt className="text-muted-foreground">{option.pricing === "demand" ? "Base fare" : "Base fare (first 2 km)"}</dt>
+                <dd className="text-right">{inr(option.breakdown.base)}</dd>
+                <dt className="text-muted-foreground">Distance · {inr(option.breakdown.perKm)}/km</dt>
+                <dd className="text-right">{inr(option.breakdown.distance)}</dd>
+                {option.breakdown.time > 0 && (
+                  <>
+                    <dt className="text-muted-foreground">Time charge</dt>
+                    <dd className="text-right">{inr(option.breakdown.time)}</dd>
+                  </>
+                )}
+                <dt className="text-muted-foreground">Minimum fare</dt>
+                <dd className="text-right">{inr(option.breakdown.minFare)}</dd>
+                <dt className="text-muted-foreground">
+                  {option.pricing === "meter" ? "Regulated meter" : option.pricing === "night" ? "Night meter (10 PM–5 AM)" : "Demand factor"}
+                </dt>
+                <dd className="text-right font-medium">{option.multiplier.toFixed(1)}x</dd>
+              </dl>
               <button
                 type="button"
                 onClick={onContinue}
