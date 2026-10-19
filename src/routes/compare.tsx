@@ -5,6 +5,8 @@ import { RouteCard, type RoutePlace } from "@/components/RouteCard";
 import { VehicleTabs, type VehicleFilter } from "@/components/VehicleTabs";
 import { SortToggle, type SortKey } from "@/components/SortToggle";
 import { FareCard } from "@/components/FareCard";
+import { ProviderFilter, type ProviderFilterValue } from "@/components/ProviderFilter";
+import { QuickDestinations } from "@/components/QuickDestinations";
 import { FareSkeleton } from "@/components/FareSkeleton";
 import { Toast, type ToastData } from "@/components/Toast";
 import { computeFares, estimateTrip, PROVIDER_NAMES, type FareOption } from "@/lib/fare-engine";
@@ -16,9 +18,11 @@ export const Route = createFileRoute("/compare")({
   head: () => ({
     meta: [
       { title: "Compare ride fares · RideCompare" },
-      { name: "description", content: "Side-by-side fare estimates for Uber, Ola and Rapido in Bengaluru." },
+      { name: "description", content: "Side-by-side fare estimates for Uber, Ola, Rapido and Namma Yatri in Bengaluru." },
       { property: "og:title", content: "Compare ride fares · RideCompare" },
-      { property: "og:description", content: "Side-by-side fare estimates for Uber, Ola and Rapido." },
+      { property: "og:description", content: "Side-by-side fare estimates for Uber, Ola, Rapido and Namma Yatri." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: ComparePage,
@@ -40,6 +44,7 @@ function ComparePage() {
     return third ? { name: third.name, lat: third.lat, lng: third.lng } : null;
   });
   const [filter, setFilter] = useState<VehicleFilter>("all");
+  const [providerFilter, setProviderFilter] = useState<ProviderFilterValue>("all");
   const [sort, setSort] = useState<SortKey>("price");
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,20 +71,23 @@ function ComparePage() {
   const trip = useMemo(() => (pickup && drop && !sameSpot ? estimateTrip(pickup, drop) : null), [pickup, drop, sameSpot]);
   const fares = useMemo(() => (trip ? computeFares(trip, routeKey) : []), [trip, routeKey]);
 
+  const byProvider = useMemo(() => (providerFilter === "all" ? fares : fares.filter((f) => f.provider === providerFilter)), [fares, providerFilter]);
+  const byType = useMemo(() => (filter === "all" ? fares : fares.filter((f) => f.type === filter)), [fares, filter]);
+
   const counts = useMemo(
     () => ({
-      all: fares.length,
-      bike: fares.filter((f) => f.type === "bike").length,
-      auto: fares.filter((f) => f.type === "auto").length,
-      car: fares.filter((f) => f.type === "car").length,
+      all: byProvider.length,
+      bike: byProvider.filter((f) => f.type === "bike").length,
+      auto: byProvider.filter((f) => f.type === "auto").length,
+      car: byProvider.filter((f) => f.type === "car").length,
     }),
-    [fares],
+    [byProvider],
   );
 
   const visible = useMemo(() => {
-    const list = filter === "all" ? fares : fares.filter((f) => f.type === filter);
+    const list = providerFilter === "all" ? byType : byType.filter((f) => f.provider === providerFilter);
     return [...list].sort((a, b) => (sort === "price" ? a.price - b.price || a.etaMin - b.etaMin : a.etaMin - b.etaMin || a.price - b.price));
-  }, [fares, filter, sort]);
+  }, [byType, providerFilter, sort]);
 
   const lowestId = visible.length ? visible.reduce((m, f) => (f.price < m.price ? f : m)).id : null;
   const nearestId = visible.length ? visible.reduce((m, f) => (f.etaMin < m.etaMin ? f : m)).id : null;
@@ -114,7 +122,7 @@ function ComparePage() {
     <div>
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
         <h1 className="text-2xl font-semibold tracking-tight">Compare ride fares</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Estimates from Uber, Ola and Rapido for your route, side by side.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Estimates from Uber, Ola, Rapido and Namma Yatri for your route, side by side.</p>
       </motion.div>
 
       <motion.div className="mt-6" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.045 }}>
@@ -131,10 +139,12 @@ function ComparePage() {
           locating={locating}
           locationMessage={locMsg}
         />
+        <QuickDestinations current={drop} onPick={setDrop} />
       </motion.div>
 
       <motion.div className="mt-8" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.09 }}>
         <VehicleTabs value={filter} counts={counts} onChange={setFilter} />
+        <ProviderFilter value={providerFilter} fares={byType} onChange={setProviderFilter} />
 
         <div className="mt-4 flex items-center justify-between gap-3">
           <p className="tabular text-sm text-muted-foreground">
