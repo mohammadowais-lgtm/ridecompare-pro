@@ -40,7 +40,6 @@ export function FareCard({
   onContinue: () => void;
 }) {
   const price = useCountUp(option.price);
-  const mono = MONO[option.provider];
   const provider = PROVIDER_NAMES[option.provider];
 
   return (
